@@ -744,10 +744,12 @@ int dsi_panel_update_doze(struct dsi_panel *panel)
 {
 	int rc = 0;
 
-	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_NOLP);
-	if (rc)
-		pr_err("[%s] failed to send DSI_CMD_SET_NOLP cmd, rc=%d\n",
-				panel->name, rc);
+	if (!panel->doze_enabled) {
+		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_NOLP);
+		if (rc)
+			pr_err("[%s] failed to send DSI_CMD_SET_NOLP cmd, rc=%d\n",
+					panel->name, rc);
+	}
 
 	return rc;
 }
@@ -757,7 +759,23 @@ int dsi_panel_set_doze_status(struct dsi_panel *panel, bool status)
 	if (panel->doze_enabled == status)
 		return 0;
 
+	if (!panel->bl_config.allow_bl_update && status) {
+		panel->doze_requested = status;
+		return 0;
+	}
+
 	panel->doze_enabled = status;
+	panel->doze_requested = status;
+
+	return dsi_panel_update_doze(panel);
+}
+
+int dsi_panel_apply_doze_status(struct dsi_panel *panel)
+{
+	if (panel->doze_requested == panel->doze_enabled)
+		return 0;
+
+	panel->doze_enabled = panel->doze_requested;
 
 	return dsi_panel_update_doze(panel);
 }
@@ -806,6 +824,10 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 		pr_err("Backlight type(%d) not supported\n", bl->type);
 		rc = -ENOTSUPP;
 	}
+
+	rc = dsi_panel_apply_doze_status(panel);
+	if (rc)
+		pr_err("[%s] unable to apply doze on, rc=%d\n", panel->name, rc);
 
 	return rc;
 }
@@ -3561,6 +3583,7 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 		pr_debug("failed to parse esd config, rc=%d\n", rc);
 
 	panel->doze_enabled = false;
+	panel->doze_requested = false;
 
 	panel->power_mode = SDE_MODE_DPMS_OFF;
 	drm_panel_init(&panel->drm_panel);
@@ -4563,6 +4586,7 @@ int dsi_panel_disable(struct dsi_panel *panel)
 	panel->panel_initialized = false;
 	panel->power_mode = SDE_MODE_DPMS_OFF;
 	panel->doze_enabled = false;
+	panel->doze_requested = false;
 
 	mutex_unlock(&panel->panel_lock);
 	return rc;
