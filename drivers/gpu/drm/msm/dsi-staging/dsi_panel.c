@@ -4145,6 +4145,11 @@ int dsi_panel_set_nolp(struct dsi_panel *panel)
 	if (!panel->panel_initialized)
 		goto exit;
 
+	if (panel->doze_requested) {
+		rc = -EINVAL;
+		goto exit;
+	}
+
 	/**
 	 * Consider about LP1->LP2->NOLP.
 	 */
